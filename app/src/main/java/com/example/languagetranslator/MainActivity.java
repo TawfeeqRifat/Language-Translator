@@ -8,6 +8,9 @@ import android.media.MediaPlayer;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.view.KeyEvent;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
 import android.widget.ArrayAdapter;
@@ -45,7 +48,8 @@ public class MainActivity extends AppCompatActivity {
     Translator translator;
 
     MediaPlayer mediaPlayer;
-
+    List<String> languages;
+    
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -65,15 +69,15 @@ public class MainActivity extends AppCompatActivity {
 
         mediaPlayer = new MediaPlayer();
 
-        List<String> langugaes = Arrays.asList(translator.Languages);
-        ArrayAdapter<String> toAdapter = new ArrayAdapter<>(this, simple_spinner_item,langugaes);
+        languages = Arrays.asList(translator.Languages);
+        ArrayAdapter<String> toAdapter = new ArrayAdapter<>(this, simple_spinner_item,languages);
         toAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         tolangugae.setAdapter(toAdapter);
         tolangugae.setSelection(7);
 
         List<String> fromLanguages = new ArrayList<>();
         fromLanguages.add("Detect Language");
-        fromLanguages.addAll(langugaes);
+        fromLanguages.addAll(languages);
         ArrayAdapter<String> fromAdapter = new ArrayAdapter<>(this,simple_spinner_item,fromLanguages);
         fromAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         fromlanguage.setAdapter(fromAdapter);
@@ -83,19 +87,25 @@ public class MainActivity extends AppCompatActivity {
         Animation rotate = AnimationUtils.loadAnimation(this, R.anim.rotate_swap);
 
         swap.setOnClickListener(v -> {
-            v.startAnimation(rotate);
+            
 
             int from = fromlanguage.getSelectedItemPosition() - 1;
             if(from == -1){
                 return;
             }
+
             int to = tolangugae.getSelectedItemPosition() + 1;
+
             fromlanguage.setSelection(to);
             tolangugae.setSelection(from);
 
-            String translatedText = totext.toString();
-            fromtext.setText(translatedText);
+            String translatedText = totext.getText().toString();
+            if(translatedText.equals("Translating...")){
+                return;
+            }
 
+            fromtext.setText(translatedText);
+            v.startAnimation(rotate);
             translate();
 
         });
@@ -116,7 +126,31 @@ public class MainActivity extends AppCompatActivity {
             playAudio(currentResponse.sourceAudio);
         });
 
+        fromtext.setOnKeyListener((v, keyCode, event) -> {
+            playSourceAudio.setVisibility(TextView.INVISIBLE);
+            playDestinationAudio.setVisibility(TextView.INVISIBLE);
+            return false;
+        });
 
+        fromtext.addTextChangedListener(new TextWatcher() {
+
+
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+                // called before text is changed
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                playSourceAudio.setVisibility(TextView.INVISIBLE);
+                playDestinationAudio.setVisibility(TextView.INVISIBLE);
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                // called after text is changed
+            }
+        });
     }
 
     private CompletableFuture<Void> playAudio(String audioUrl) {
@@ -148,11 +182,12 @@ public class MainActivity extends AppCompatActivity {
     private void translate(){
         String fromCode = translator.langHashMap.get(fromlanguage.getSelectedItem().toString());
         String toCode = translator.langHashMap.get(tolangugae.getSelectedItem().toString());
-        System.out.println(fromCode);
+
 
         totext.setText("Translating...");
         totext.setTextColor(Color.GRAY);
-
+        translateButton.setAlpha(0.5f);
+        translateButton.setEnabled(false);
         CompletableFuture<TranslatedResponse> future;
         if(fromCode == null){
             future = translator.translate(fromtext.getText().toString(),toCode);
@@ -166,6 +201,17 @@ public class MainActivity extends AppCompatActivity {
                 totext.setText(translatedResponse.responseText);
                 totext.setTextColor(Color.BLACK);
                 currentResponse = translatedResponse;
+
+                playSourceAudio.setVisibility(TextView.VISIBLE);
+                playDestinationAudio.setVisibility(TextView.VISIBLE);
+
+                String currentLanguage = translator.langCodeHashMap.get(currentResponse.sourceCode);
+                int index = languages.indexOf(currentLanguage);
+                fromlanguage.setSelection(index+1);
+
+                translateButton.setAlpha(1f);
+                translateButton.setEnabled(true);
+
             });
         });
     }
@@ -179,7 +225,6 @@ class Translator {
     public Translator(){
         CompletableFuture<HashMap<String, String>> task = getLanguageHashMap();
         langHashMap = task.join();
-        // System.out.println(langHashMap.get("sl"));
         LanguageCodes = langHashMap.values().toArray(new String[0]);
         Languages = langHashMap.keySet().toArray(new String[0]);
     }
@@ -315,12 +360,10 @@ class Translator {
                             }
                         }
                     }
-                    System.out.println(map);
 
                     json = response.toString().trim();
                     ObjectMapper mapper = new ObjectMapper();
                     langCodeHashMap = mapper.readValue(json, HashMap.class);
-                    System.out.println(langCodeHashMap);
 
                 } else {
                     System.out.println("API request failed with response code: " + responseCode);
